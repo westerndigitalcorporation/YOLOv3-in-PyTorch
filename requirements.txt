@@ -1,0 +1,6 @@
+python>=3.6
+matplotlib
+numpy
+pillow
+torch>=1.0
+torchvision

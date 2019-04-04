@@ -1,0 +1,13 @@
+checkpoints/
+notebooks/
+log/
+output/
+.ipynb_checkpoints/
+.idea/
+weights/yolov3_retrain_AP583.pt
+
+
+
+__pycache__/
+*.py[cod]
+*$py.class
