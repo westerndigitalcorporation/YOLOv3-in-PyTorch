@@ -33,7 +33,7 @@ git clone https://github.com/westerndigitalcorporation/YOLOv3-in-PyTorch
 cd YOLOv3-in-PyTorch
 pip install -r requirements.txt
 cd src
-python main.py test --save-img
+python3 main.py test --save-img
 
 ```
 Detections will be saved in the `output` folder.
@@ -86,7 +86,7 @@ Please follow the instructions on [their github repo](https://github.com/cocodat
 After the COCO dataset is properly downloaded and the API setup, the training can be done by:
 
 ```
-python main.py train --verbose --img-dir /path/to/image/folder --annot-path /path/to/annotation/file --reset-weights
+python3 main.py train --verbose --img-dir /path/to/image/folder --annot-path /path/to/annotation/file --reset-weights
 ```
 You can see the network to converge within 1-2 epochs of training.
 
@@ -95,12 +95,12 @@ You can see the network to converge within 1-2 epochs of training.
 To run inference on one image folder, run:
 
 ```
-python main.py test --img-dir /path/to/image/folder --save-det --save-img
+python3 main.py test --img-dir /path/to/image/folder --save-det --save-img
 ```
 
 ### Options
 
-`main.py` provides numerous options to tweak the functions. Run `python main.py --help` to check the provided options.
+`main.py` provides numerous options to tweak the functions. Run `python3 main.py --help` to check the provided options.
 
 ## Authors
 
