@@ -24,8 +24,11 @@ It can be used as a baseline for transfer learning.
 
 ## Getting Started
 
-Run the following command to see sample detection results.
+Before cloning the repo to your local machine, make sure that `git-lfs` is installed. See details about `git-lfs', see [this link](https://www.atlassian.com/git/tutorials/git-lfs#installing-git-lfs).
+
+After `git-lfs` is installed. Run the following command to see sample detection results.
 ```
+git lfs install
 git clone https://github.com/westerndigitalcorporation/YOLOv3-in-PyTorch
 cd YOLOv3-in-PyTorch
 pip install -r requirements.txt
