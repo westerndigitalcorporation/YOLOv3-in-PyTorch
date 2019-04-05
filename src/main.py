@@ -320,7 +320,7 @@ def save_det_image(img_path, detections, output_img_path, class_names):
     plt.axis('off')
     plt.gca().xaxis.set_major_locator(NullLocator())
     plt.gca().yaxis.set_major_locator(NullLocator())
-    plt.savefig('{}.png'.format(output_img_path), bbox_inches='tight', pad_inches=0.0)
+    plt.savefig(output_img_path, bbox_inches='tight', pad_inches=0.0)
     plt.close()
     return
 
