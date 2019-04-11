@@ -4,6 +4,7 @@ log/
 output/
 .ipynb_checkpoints/
 .idea/
+test/
 weights/yolov3_retrain_AP583.pt
 
 

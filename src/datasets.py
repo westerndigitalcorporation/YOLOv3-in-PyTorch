@@ -30,17 +30,19 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-from torchvision import transforms
+from torchvision import transforms as tv_tf
 from torchvision.datasets import CocoDetection
 
 from config import NUM_ATTRIB
 from utils import transform_bboxes, coco_category_to_one_hot, xywh_to_cxcywh
+from transforms import default_transform_fn as new_default_transform_fn
+from transforms import random_transform_fn
 
 
 def default_transform_fn(padding, img_size):
-    return transforms.Compose([transforms.Pad(padding, fill=(127, 127, 127)),
-                               transforms.Resize(img_size),
-                               transforms.ToTensor()])
+    return tv_tf.Compose([tv_tf.Pad(padding, fill=(127, 127, 127)),
+                          tv_tf.Resize(img_size),
+                          tv_tf.ToTensor()])
 
 
 def get_padding(h, w):
@@ -111,30 +113,39 @@ class ImageFolder(Dataset):
 
 class CocoDetectionBoundingBox(CocoDetection):
 
-    def __init__(self, img_root, ann_file_name, img_size):
+    def __init__(self, img_root, ann_file_name, img_size, transform='default'):
         super(CocoDetectionBoundingBox, self).__init__(img_root, ann_file_name)
         self._img_size = img_size
+        if transform == 'default':
+            self._tf = new_default_transform_fn(img_size)
+        elif transform == 'random':
+            self._tf = random_transform_fn(img_size)
+        else:
+            raise ValueError("input transform can only be 'default' or 'random'.")
 
     def __getitem__(self, index):
         img, targets = super(CocoDetectionBoundingBox, self).__getitem__(index)
-        w, h = img.size
-        _padding = get_padding(h, w)
-        max_size = max(w, h)
-        scale = self._img_size / max_size
-        _transform = default_transform_fn(_padding, self._img_size)
-        transformed_img_tensor = _transform(img)
+        # transformed_img_tensor, label_tensor = self._tf(img, targets)
+        # w, h = img.size
+        # _padding = get_padding(h, w)
+        # max_size = max(w, h)
+        # scale = self._img_size / max_size
+        # _transform = default_transform_fn(_padding, self._img_size)
+        # transformed_img_tensor = _transform(img)
         labels = []
         for target in targets:
             bbox = torch.tensor(target['bbox'], dtype=torch.float32) # in xywh format
-            bbox = xywh_to_cxcywh(bbox) #convert to cxcywh
+            # bbox = xywh_to_cxcywh(bbox) #convert to cxcywh
             category_id = target['category_id']
-            bbox = transform_bboxes(bbox, scale, _padding)
+            # bbox = transform_bboxes(bbox, scale, _padding)
             one_hot_label = coco_category_to_one_hot(category_id, dtype='float32')
             conf = torch.tensor([1.])
-            label = torch.cat((torch.tensor(bbox), conf, one_hot_label))
+            label = torch.cat((bbox, conf, one_hot_label))
             labels.append(label)
         if labels:
             label_tensor = torch.stack(labels)
         else:
             label_tensor = torch.zeros((0, NUM_ATTRIB))
+        transformed_img_tensor, label_tensor = self._tf(img, label_tensor)
+        label_tensor = xywh_to_cxcywh(label_tensor)
         return transformed_img_tensor, label_tensor, len(targets)

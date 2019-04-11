@@ -30,6 +30,9 @@ import torch.nn as nn
 
 from config import MISSING_IDS, NUM_CLASSES_COCO
 
+from PIL import Image, ImageDraw
+from torchvision.transforms import ToPILImage
+
 
 def load_classes(path):
     """
@@ -145,21 +148,35 @@ def xywh_to_cxcywh(bbox):
     return bbox
 
 
+# def draw_result(img, boxes):
+#     img = np.array(img.numpy().transpose(1, 2, 0))
+#     import matplotlib.pyplot as plt
+#     import matplotlib.patches as patches
+#     plt.figure()
+#     fig, ax = plt.subplots(1)
+#     ax.imshow(img)
+#     for box in boxes:
+#         x = box[0]
+#         y = box[1]
+#         w = box[2]
+#         h = box[3]
+#         bbox = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='b',
+#                                  facecolor='none')
+#         ax.add_patch(bbox)
+#     plt.show()
+
+
 def draw_result(img, boxes):
-    img = np.array(img.numpy().transpose(1, 2, 0))
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    plt.figure()
-    fig, ax = plt.subplots(1)
-    ax.imshow(img)
+    if isinstance(img, torch.Tensor):
+        transform = ToPILImage()
+        img = transform(img)
+    draw = ImageDraw.ImageDraw(img)
     for box in boxes:
-        x = box[0]
-        y = box[1]
-        w = box[2]
-        h = box[3]
-        bbox = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='b',
-                                 facecolor='none')
-        ax.add_patch(bbox)
-    plt.show()
+        x, y, w, h = box[:4]
+        x2 = x + w
+        y2 = y + h
+        draw.rectangle([x,y,x2,y2], outline='white', width=3)
+    img.show()
+    return img
 
 
