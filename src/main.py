@@ -39,7 +39,7 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import NullLocator
 from torch.utils.data import DataLoader
 
-from datasets import ImageFolder, CocoDetectionBoundingBox, collate_img_label_fn
+from datasets import ImageFolder, CocoDetectionBoundingBox, collate_img_label_fn, CaltechPedDataset
 from inference import post_process
 from model import YoloNetV3
 from training import yolo_loss_fn
@@ -182,6 +182,38 @@ def load_coco_dataset(img_folder_dir, annot_path, img_size, batch_size, n_cpu, s
         num_workers=n_cpu,
         collate_fn=collate_img_label_fn
     )
+    return _dataloader
+
+
+def load_caltech_dataset(root, img_size, batch_size, n_cpu, shuffle):
+    _dataloader = DataLoader(
+        CaltechPedDataset(
+            root,
+            img_size=img_size,
+            transform='random',
+            video_set='training'
+        ),
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=n_cpu,
+        collate_fn=collate_img_label_fn
+    )
+    return _dataloader
+
+
+def load_dataset(type, img_size, batch_size, n_cpu, shuffle, img_dir, annot_dir=None, **kwargs):
+    if type == "image_folder":
+        _dataset = ImageFolder(img_dir, img_size=img_size)
+        _collate_fn = None
+    elif type == "coco":
+        _dataset = CocoDetectionBoundingBox(img_dir, annot_dir, img_size=img_size)
+        _collate_fn = collate_img_label_fn
+    elif type == "caltech":
+        _dataset = CaltechPedDataset(img_dir, img_size, **kwargs)
+        _collate_fn = collate_img_label_fn
+    else:
+        raise TypeError("dataset types can only be 'image_folder', 'coco' or 'caltech'.")
+    _dataloader = DataLoader(_dataset, batch_size, shuffle, num_workers=n_cpu, collate_fn=_collate_fn)
     return _dataloader
 
 
@@ -408,9 +440,8 @@ def run_yolo_training(opt):
         for p in layer.parameters():
             p.requires_grad_()
 
-    dataloader = load_coco_dataset(
+    dataloader = load_caltech_dataset(
         opt.img_dir,
-        opt.annot_path,
         opt.img_size,
         opt.batch_size,
         opt.n_cpu,

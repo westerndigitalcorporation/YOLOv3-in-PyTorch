@@ -57,21 +57,21 @@ def random_transform_fn(img_size):
                              tv_tf.ToTensor()])
 
 
-def get_padding(h, w):
-    """Generate the size of the padding given the size of the image,
-    such that the padded image will be square.
-    Args:
-        h (int): the height of the image.
-        w (int): the width of the image.
-    Return:
-        A tuple of size 4 indicating the size of the padding in 4 directions:
-        left, top, right, bottom. This is to match torchvision.transforms.Pad's parameters.
-        For details, see:
-            https://pytorch.org/docs/stable/torchvision/transforms.html#torchvision.transforms.Pad
-        """
-    dim_diff = np.abs(h - w)
-    pad1, pad2 = dim_diff // 2, dim_diff - dim_diff // 2
-    return (0, pad1, 0, pad2) if h <= w else (pad1, 0, pad2, 0)
+# def get_padding(h, w):
+#     """Generate the size of the padding given the size of the image,
+#     such that the padded image will be square.
+#     Args:
+#         h (int): the height of the image.
+#         w (int): the width of the image.
+#     Return:
+#         A tuple of size 4 indicating the size of the padding in 4 directions:
+#         left, top, right, bottom. This is to match torchvision.transforms.Pad's parameters.
+#         For details, see:
+#             https://pytorch.org/docs/stable/torchvision/transforms.html#torchvision.transforms.Pad
+#         """
+#     dim_diff = np.abs(h - w)
+#     pad1, pad2 = dim_diff // 2, dim_diff - dim_diff // 2
+#     return (0, pad1, 0, pad2) if h <= w else (pad1, 0, pad2, 0)
 
 
 class RandomResizedCropWithLabel(tv_tf.RandomResizedCrop):
@@ -172,25 +172,6 @@ class RandomAffineWithLabel(tv_tf.RandomAffine):
         center = (img.size[0] * 0.5 + 0.5, img.size[1] * 0.5 + 0.5)
         affine_transform_matrix = _get_affine_matrix(center, rot_angle, translate, scale, shear)
         label = _affine_transform_label(label, affine_transform_matrix)
-        # xywh = np.matrix(label[..., :4].numpy())
-        # xy_lt = xywh[:, :2].copy()
-        # xy_rb = xy_lt + xywh[:, 2:4].copy()
-        # xy_rt = xywh[:, :2].copy()
-        # xy_rt[:, 0] = xy_rb[:, 0].copy()
-        # xy_lb = xywh[:, :2].copy()
-        # xy_lb[:, 1] = xy_rb[:, 1].copy()
-        # rotation = affine_transform_matrix[:2, :2]
-        # translation = affine_transform_matrix[:2, 2]
-        # xy_lt = xy_lt.dot(rotation.T) + translation.T
-        # xy_rb = xy_rb.dot(rotation.T) + translation.T
-        # xy_rt = xy_rt.dot(rotation.T) + translation.T
-        # xy_lb = xy_lb.dot(rotation.T) + translation.T
-        # x1 = np.minimum(xy_lt[:, 0], xy_lb[:, 0])
-        # y1 = np.minimum(xy_lt[:, 1], xy_rt[:, 1])
-        # x2 = np.maximum(xy_rt[:, 0], xy_rb[:, 0])
-        # y2 = np.maximum(xy_lb[:, 1], xy_rb[:, 1])
-        # xywh = np.concatenate((x1, y1, x2 - x1, y2 - y1), axis=1)
-        # label[..., :4] = torch.from_numpy(xywh)
         return img, label
 
 
@@ -263,7 +244,7 @@ class PadToSquareWithLabel(object):
         self.padding_mode = padding_mode
 
     @staticmethod
-    def get_padding(w, h):
+    def _get_padding(w, h):
         """Generate the size of the padding given the size of the image,
         such that the padded image will be square.
         Args:
@@ -281,7 +262,7 @@ class PadToSquareWithLabel(object):
 
     def __call__(self, img, label=None):
         w, h = img.size
-        padding = self.get_padding(w, h)
+        padding = self._get_padding(w, h)
         img = TF.pad(img, padding, self.fill, self.padding_mode)
         if label is None:
             return img
