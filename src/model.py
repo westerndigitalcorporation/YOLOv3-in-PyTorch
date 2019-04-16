@@ -262,32 +262,34 @@ class YoloNetV3(nn.Module):
         return _layers
 
     def yolo_last_two_layers(self):
-        _layers = [self.yolo_tail.detect1.conv7,
-                   self.yolo_tail.detect2.conv7,
-                   self.yolo_tail.detect3.conv7,
-                   self.yolo_tail.detect1.conv6,
+        _layers = self.yolo_last_layers() + \
+                  [self.yolo_tail.detect1.conv6,
                    self.yolo_tail.detect2.conv6,
                    self.yolo_tail.detect3.conv6]
         return _layers
 
     def yolo_last_three_layers(self):
-        _layers = [self.yolo_tail.detect1.conv7,
-                   self.yolo_tail.detect2.conv7,
-                   self.yolo_tail.detect3.conv7,
-                   self.yolo_tail.detect1.conv6,
-                   self.yolo_tail.detect2.conv6,
-                   self.yolo_tail.detect3.conv6,
-                   self.yolo_tail.detect1.conv5,
+        _layers = self.yolo_last_two_layers() + \
+                  [self.yolo_tail.detect1.conv5,
                    self.yolo_tail.detect2.conv5,
                    self.yolo_tail.detect3.conv5]
         return _layers
 
+    def yolo_tail_layers(self):
+        _layers = [self.yolo_tail]
+
     def yolo_last_n_layers(self, n):
+        try:
+            n = int(n)
+        except ValueError:
+            pass
         if n == 1:
             return self.yolo_last_layers()
         elif n == 2:
             return self.yolo_last_two_layers()
         elif n == 3:
             return self.yolo_last_three_layers()
+        elif n == 'tail':
+            return self.yolo_tail_layers()
         else:
-            raise IndexError("n>3 not defined")
+            raise ValueError("n>3 not defined")

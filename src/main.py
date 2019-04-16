@@ -52,6 +52,8 @@ def parse_args():
     parser.add_argument('ACTION', type=str, help="'train' or 'test' the detector.")
     # data loading:
     # both:
+    parser.add_argument('--dataset', dest='dataset_type', type=str, default='image_folder',
+                        help="The type of the dataset used. Currently support 'coco', 'caltech' and 'image_folder'")
     parser.add_argument('--img-dir', dest='img_dir', type=str, default='../data/samples',
                         help="The path to the folder containing images to be detected or trained.")
     parser.add_argument('--batch-size', dest='batch_size', type=int, default=4,
@@ -61,7 +63,7 @@ def parse_args():
     parser.add_argument("--img-size", dest='img_size', type=int, default=416,
                         help="The size of the image for training or inference.")
     # training only
-    parser.add_argument('--annot-path', dest='annot_path', type=str,
+    parser.add_argument('--annot-path', dest='annot_path', type=str, default=None,
                         help="TRAINING ONLY: The path to the file of the annotations for training.")
 
     # model loading:
@@ -76,7 +78,7 @@ def parse_args():
     #training only:
     parser.add_argument('--reset-weights', dest='reset_weights', action='store_true',
                         help="TRAINING ONLY: Reset the weights which are not fixed during training.")
-    parser.add_argument('--last-n-layers', dest='n_last_layers', type=int, default=1,
+    parser.add_argument('--last-n-layers', dest='n_last_layers', type=str, default='1',
                         help="TRAINING ONLY: Unfreeze the last n layers for retraining.")
 
     # logging:
@@ -101,8 +103,9 @@ def parse_args():
                         help="TRAINING ONLY: directory where model checkpoints are saved")
     parser.add_argument('--save-every-epoch', dest='save_every_epoch', type=int, default=1,
                         help="TRAINING ONLY: Save weights to checkpoint file every X epochs.")
-    parser.add_argument('--save-every-batch', dest='save_every_batch',type=int, default=1000,
-                        help="TRAINING ONLY: Save weights to checkpoint file every X batches.")
+    parser.add_argument('--save-every-batch', dest='save_every_batch', type=int, default=0,
+                        help="TRAINING ONLY: Save weights to checkpoint file every X batches. "
+                             "If value is 0, batch checkpoint will turn off.")
 
     # training parameters:
     parser.add_argument('--epochs', dest='n_epoch', type=int, default=30,
@@ -157,51 +160,51 @@ def load_yolov3_model(weight_path, device, ckpt=False, mode='eval'):
     return _model
 
 
-def load_image_folder_dataset(img_folder_dir, img_size, batch_size, n_cpu):
-    _dataloader = DataLoader(
-        ImageFolder(
-            img_folder_dir,
-            img_size=img_size
-        ),
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=n_cpu
-    )
-    return _dataloader
+# def load_image_folder_dataset(img_folder_dir, img_size, batch_size, n_cpu):
+#     _dataloader = DataLoader(
+#         ImageFolder(
+#             img_folder_dir,
+#             img_size=img_size
+#         ),
+#         batch_size=batch_size,
+#         shuffle=False,
+#         num_workers=n_cpu
+#     )
+#     return _dataloader
 
 
-def load_coco_dataset(img_folder_dir, annot_path, img_size, batch_size, n_cpu, shuffle):
-    _dataloader = DataLoader(
-        CocoDetectionBoundingBox(
-            img_folder_dir,
-            annot_path,
-            img_size=img_size
-        ),
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=n_cpu,
-        collate_fn=collate_img_label_fn
-    )
-    return _dataloader
+# def load_coco_dataset(img_folder_dir, annot_path, img_size, batch_size, n_cpu, shuffle):
+#     _dataloader = DataLoader(
+#         CocoDetectionBoundingBox(
+#             img_folder_dir,
+#             annot_path,
+#             img_size=img_size
+#         ),
+#         batch_size=batch_size,
+#         shuffle=shuffle,
+#         num_workers=n_cpu,
+#         collate_fn=collate_img_label_fn
+#     )
+#     return _dataloader
 
 
-def load_caltech_dataset(root, img_size, batch_size, n_cpu, shuffle):
-    _dataloader = DataLoader(
-        CaltechPedDataset(
-            root,
-            img_size=img_size,
-            transform='random',
-            video_set='training'
-        ),
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=n_cpu,
-        collate_fn=collate_img_label_fn
-    )
-    return _dataloader
+# def load_caltech_dataset(root, img_size, batch_size, n_cpu, shuffle):
+#     _dataloader = DataLoader(
+#         CaltechPedDataset(
+#             root,
+#             img_size=img_size,
+#             transform='random',
+#             video_set='training'
+#         ),
+#         batch_size=batch_size,
+#         shuffle=shuffle,
+#         num_workers=n_cpu,
+#         collate_fn=collate_img_label_fn
+#     )
+#     return _dataloader
 
 
-def load_dataset(type, img_size, batch_size, n_cpu, shuffle, img_dir, annot_dir=None, **kwargs):
+def load_dataset(type, img_dir, annot_dir, img_size, batch_size, n_cpu, shuffle, **kwargs):
     if type == "image_folder":
         _dataset = ImageFolder(img_dir, img_size=img_size)
         _collate_fn = None
@@ -213,7 +216,10 @@ def load_dataset(type, img_size, batch_size, n_cpu, shuffle, img_dir, annot_dir=
         _collate_fn = collate_img_label_fn
     else:
         raise TypeError("dataset types can only be 'image_folder', 'coco' or 'caltech'.")
-    _dataloader = DataLoader(_dataset, batch_size, shuffle, num_workers=n_cpu, collate_fn=_collate_fn)
+    if _collate_fn is not None:
+        _dataloader = DataLoader(_dataset, batch_size, shuffle, num_workers=n_cpu, collate_fn=_collate_fn)
+    else:
+        _dataloader = DataLoader(_dataset, batch_size, shuffle, num_workers=n_cpu)
     return _dataloader
 
 
@@ -228,6 +234,8 @@ def make_output_dir(out_dir):
 def run_detection(model, dataloader, device, conf_thres, nms_thres):
     results = []
     _total_time = 0
+    _total_time_nn = 0
+    _total_time_pp = 0
 
     logging.info('Performing object detection:')
 
@@ -238,9 +246,10 @@ def run_detection(model, dataloader, device, conf_thres, nms_thres):
         paddings = batch[3].to(device)
 
         # Get detections
-        prev_time = time.time()
+        start_time = time.time()
         with torch.no_grad():
             detections = model(img_batch)
+        forward_end_time = time.time()
         detections = post_process(detections, True, conf_thres, nms_thres)
 
         for detection, scale, padding in zip(detections, scales, paddings):
@@ -248,21 +257,35 @@ def run_detection(model, dataloader, device, conf_thres, nms_thres):
             cxcywh_to_xywh(detection)
 
         # Log progress
-        current_time = time.time()
-        inference_time = current_time - prev_time
-        logging.info('\t+ Batch {}, Inference Time: {}s'.format(batch_i, inference_time))
-        _total_time += inference_time
+        end_time = time.time()
+        inference_time_both = end_time - start_time
+        inference_time_nn = forward_end_time - start_time
+        inference_time_pp = end_time - forward_end_time
+        logging.info('Batch {}, '
+                     'NN inference time: {}s, '
+                     'PostProc inference time: {}s.'
+                     'Total time: {}s, '.format(batch_i,
+                                                inference_time_nn,
+                                                inference_time_pp,
+                                                inference_time_both))
+        _total_time += inference_time_both
+        _total_time_nn += inference_time_nn
+        _total_time_pp += inference_time_pp
 
         results.extend(zip(file_names, detections, scales, paddings))
 
-    average_time = _total_time / len(dataloader.dataset)
-    logging.info('Average inference time is {}s.'.format(average_time))
+    avg_time_both = _total_time / len(dataloader.dataset)
+    avg_time_nn = _total_time_nn / len(dataloader.dataset)
+    avg_time_pp = _total_time_pp / len(dataloader.dataset)
+    logging.info('Average inference time (total) is {}s.'.format(avg_time_both))
+    logging.info('Average inference time (NN) is {}s.'.format(avg_time_nn))
+    logging.info('Average inference time (PostProc) is {}s.'.format(avg_time_pp))
     return results
 
 
 def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_n_batch, every_n_epoch, ckpt_dir):
     losses = None
-    for epoch in range(n_epoch):
+    for epoch_i in range(n_epoch):
         for batch_i, (imgs, targets, target_lengths) in enumerate(dataloader):
             with torch.autograd.detect_anomaly():
                 optimizer.zero_grad()
@@ -282,7 +305,7 @@ def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_
             logging.info(
                 "[Epoch {}/{}, Batch {}/{}] [Losses: total {}, coord {}, obj {}, noobj {}, class {}]"
                 .format(
-                    epoch,
+                    epoch_i,
                     n_epoch,
                     batch_i,
                     len(dataloader),
@@ -294,13 +317,13 @@ def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_
                 )
             )
 
-            if batch_i % every_n_batch == 0:
-                save_path = "{}/ckpt_epoch_{}_batch_{}.pt".format(ckpt_dir, epoch, batch_i)
-                save_checkpoint_weight_file(model, optimizer, epoch, batch_i, losses, save_path)
+            if every_n_batch != 0 and (batch_i + 1) % every_n_batch == 0:
+                save_path = "{}/ckpt_epoch_{}_batch_{}.pt".format(ckpt_dir, epoch_i, batch_i)
+                save_checkpoint_weight_file(model, optimizer, epoch_i, batch_i, losses, save_path)
 
-        if epoch % every_n_epoch == 0:
-            save_path = "{}/ckpt_epoch_{}.pt".format(ckpt_dir, epoch)
-            save_checkpoint_weight_file(model, optimizer, epoch, 0, losses, save_path)
+        if (epoch_i + 1) % every_n_epoch == 0:
+            save_path = "{}/ckpt_epoch_{}.pt".format(ckpt_dir, epoch_i)
+            save_checkpoint_weight_file(model, optimizer, epoch_i, 0, losses, save_path)
 
     return
 
@@ -398,19 +421,22 @@ def run_yolo_inference(opt):
     # load model
     model = load_yolov3_model(opt.weight_path, dev, ckpt=opt.from_ckpt)
     # load data
-    data_loader = load_image_folder_dataset(opt.img_dir,
-                                            opt.img_size,
-                                            opt.batch_size,
-                                            opt.n_cpu)
+    dataloader = load_dataset(type='image_folder',
+                              img_dir=opt.img_dir,
+                              annot_dir=None,
+                              img_size=opt.img_size,
+                              batch_size=opt.batch_size,
+                              n_cpu=opt.n_cpu,
+                              shuffle=False)
     # run detection
-    results = run_detection(model, data_loader, dev, opt.conf_thres, opt.nms_thres)
+    results = run_detection(model, dataloader, dev, opt.conf_thres, opt.nms_thres)
     # post processing
     if opt.save_det:
-        json_path = '{}/{}.json'.format(opt.out_dir, current_datetime_str)
+        json_path = '{}/{}/detections.json'.format(opt.out_dir, current_datetime_str)
         save_results_as_json(results, json_path)
     if opt.save_img:
         class_names = load_classes(opt.class_path)
-        save_results_as_images(results, opt.out_dir, class_names)
+        save_results_as_images(results, '{}/{}/img'.format(opt.out_dir, current_datetime_str), class_names)
     return
 
 
@@ -440,13 +466,21 @@ def run_yolo_training(opt):
         for p in layer.parameters():
             p.requires_grad_()
 
-    dataloader = load_caltech_dataset(
-        opt.img_dir,
-        opt.img_size,
-        opt.batch_size,
-        opt.n_cpu,
-        shuffle=True
-    )
+    # dataloader = load_caltech_dataset(
+    #     opt.img_dir,
+    #     opt.img_size,
+    #     opt.batch_size,
+    #     opt.n_cpu,
+    #     shuffle=True
+    # )
+
+    dataloader = load_dataset(type=opt.dataset_type,
+                              img_dir=opt.img_dir,
+                              annot_dir=opt.annot_path,
+                              img_size=opt.img_size,
+                              batch_size=opt.batch_size,
+                              n_cpu=opt.n_cpu,
+                              shuffle=True)
 
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -458,7 +492,7 @@ def run_yolo_training(opt):
                  opt.n_epoch,
                  opt.save_every_batch,
                  opt.save_every_epoch,
-                 opt.ckpt_dir)
+                 ckpt_dir)
     return
 
 
