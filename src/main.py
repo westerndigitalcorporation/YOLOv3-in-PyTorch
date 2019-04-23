@@ -189,7 +189,8 @@ def make_output_dir(out_dir):
 
 def run_detection(model, dataloader, device, conf_thres, nms_thres):
     results = []
-    _total_time = 0
+    _detection_time_list = []
+    # _total_time = 0
 
     logging.info('Performing object detection:')
 
@@ -216,12 +217,16 @@ def run_detection(model, dataloader, device, conf_thres, nms_thres):
         logging.info('Batch {}, '
                      'Total time: {}s, '.format(batch_i,
                                                 inference_time_both))
-        _total_time += inference_time_both
+        _detection_time_list.append(inference_time_both)
+        # _total_time += inference_time_both
 
         results.extend(zip(file_names, detections, scales, paddings))
 
-    avg_time_both = _total_time / len(dataloader.dataset)
-    logging.info('Average inference time (total) is {}s.'.format(avg_time_both))
+    _detection_time_tensor = torch.tensor(_detection_time_list)
+    avg_time = torch.mean(_detection_time_tensor)
+    time_std_dev = torch.std(_detection_time_tensor)
+    logging.info('Average inference time (total) is {}s.'.format(float(avg_time)))
+    logging.info('Std dev of inference time (total) is {}s.'.format(float(time_std_dev)))
     return results
 
 
