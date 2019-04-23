@@ -6,6 +6,7 @@ output/
 .idea/
 test/
 scripts/
+exp/
 weights/*.pt
 !weights/yolov3_original.pt
 

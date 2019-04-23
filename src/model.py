@@ -277,6 +277,297 @@ class YoloNetV3(nn.Module):
 
     def yolo_tail_layers(self):
         _layers = [self.yolo_tail]
+        return _layers
+
+    def yolo_last_n_layers(self, n):
+        try:
+            n = int(n)
+        except ValueError:
+            pass
+        if n == 1:
+            return self.yolo_last_layers()
+        elif n == 2:
+            return self.yolo_last_two_layers()
+        elif n == 3:
+            return self.yolo_last_three_layers()
+        elif n == 'tail':
+            return self.yolo_tail_layers()
+        else:
+            raise ValueError("n>3 not defined")
+
+
+class BottleNeckLSTMCell(nn.Module):
+
+    def __init__(self, input_size, hidden_size, bias=True):
+        super(BottleNeckLSTMCell, self).__init__()
+        self.conv_bottleneck_input_dw = nn.Conv2d(input_size, input_size, 3, padding=1, groups=input_size, bias=bias)
+        self.conv_bottleneck_pw = nn.Conv2d(input_size + hidden_size, hidden_size, 1, bias=bias)
+        self.conv_common_dw = nn.Conv2d(hidden_size, hidden_size, 3, padding=1, groups=hidden_size, bias=bias)
+        self.conv_forget_pw = nn.Conv2d(hidden_size, hidden_size, 1, bias=bias)
+        self.conv_input_pw = nn.Conv2d(hidden_size, hidden_size, 1, bias=bias)
+        self.conv_input_mod_pw = nn.Conv2d(hidden_size, hidden_size, 1, bias=bias)
+        self.conv_output_pw = nn.Conv2d(hidden_size, hidden_size, 1, bias=bias)
+        self.hidden_size = hidden_size
+
+    def forward(self, x: Tensor, hs=None):
+        if hs is not None:
+            hidden_prev, state_prev = hs
+        else:
+            size_x = list(x.size())
+            size_x[1] = self.hidden_size
+            hidden_prev = x.new_zeros(size_x)
+            state_prev = x.new_zeros(size_x)
+        tmp = self.conv_bottleneck_input_dw(x)
+        tmp = torch.cat((tmp, hidden_prev), 1)
+        t_bottleneck = F.relu(self.conv_bottleneck_pw(tmp))
+        t_common = self.conv_common_dw(t_bottleneck)
+        t_forget = torch.sigmoid(self.conv_forget_pw(t_common))
+        t_input = torch.sigmoid(self.conv_input_pw(t_common))
+        t_input_mod = F.relu(self.conv_input_mod_pw(t_common))
+        t_output = torch.sigmoid(self.conv_output_pw(t_common))
+        t_state = t_forget * state_prev + t_input * t_input_mod
+        t_hidden = t_output * F.relu(t_state)
+        return t_hidden, t_state
+
+
+
+class DetectionBlockLSTM_V1(nn.Module):
+    """The DetectionBlock contains:
+    Six ConvLayers, 1 Conv2D Layer and 1 YoloLayer.
+    The first 6 ConvLayers are formed the following way:
+    1x1xn, 3x3x2n, 1x1xn, 3x3x2n, 1x1xn, 3x3x2n,
+    The Conv2D layer is 1x1x255.
+    Some block will have branch after the fifth ConvLayer.
+    The input channel is arbitrary (in_channels)
+    out_channels = n
+    """
+
+    def __init__(self, in_channels, out_channels, scale, stride):
+        super(DetectionBlockLSTM_V1, self).__init__()
+        assert out_channels % 2 == 0  #assert out_channels is an even number
+        half_out_channels = out_channels // 2
+        self.conv1 = ConvLayer(in_channels, half_out_channels, 1)
+        self.conv2 = ConvLayer(half_out_channels, out_channels, 3)
+        self.conv3 = ConvLayer(out_channels, half_out_channels, 1)
+        self.conv4 = ConvLayer(half_out_channels, out_channels, 3)
+        self.lstm5 = BottleNeckLSTMCell(out_channels, half_out_channels)
+        self.conv6 = ConvLayer(half_out_channels, out_channels, 3)
+        self.conv7 = nn.Conv2d(out_channels, LAST_LAYER_DIM, 1, bias=True)
+        self.yolo = YoloLayer(scale, stride)
+
+    def forward(self, x, hs=None):
+        tmp = self.conv1(x)
+        tmp = self.conv2(tmp)
+        tmp = self.conv3(tmp)
+        tmp = self.conv4(tmp)
+        self.hs = self.lstm5(tmp, hs)
+        tmp = self.conv6(self.hs[0])
+        tmp = self.conv7(tmp)
+        out = self.yolo(tmp)
+
+        return out
+
+
+class YoloNetTailLSTM_V1(nn.Module):
+
+    """The tail side of the YoloNet.
+    It will take the result from DarkNet53BackBone and do some upsampling and concatenation.
+    It will finally output the detection result.
+    Assembling YoloNetTail and DarkNet53BackBone will give you final result"""
+
+    def __init__(self):
+        super(YoloNetTailLSTM_V1, self).__init__()
+        self.detect1 = DetectionBlockLSTM_V1(1024, 1024, 'l', 32)
+        self.conv1 = ConvLayer(512, 256, 1)
+        self.detect2 = DetectionBlockLSTM_V1(768, 512, 'm', 16)
+        self.conv2 = ConvLayer(256, 128, 1)
+        self.detect3 = DetectionBlockLSTM_V1(384, 256, 's', 8)
+
+    def forward(self, x1, x2, x3, hs1=None, hs2=None, hs3=None):
+        out1 = self.detect1(x1, hs1)
+        hs_new1 = self.detect1.hs
+        tmp = self.conv1(hs_new1[0])
+        tmp = F.interpolate(tmp, scale_factor=2)
+        tmp = torch.cat((tmp, x2), 1)
+        out2 = self.detect2(tmp, hs2)
+        hs_new2 = self.detect2.hs
+        tmp = self.conv2(hs_new2[0])
+        tmp = F.interpolate(tmp, scale_factor=2)
+        tmp = torch.cat((tmp, x3), 1)
+        out3 = self.detect3(tmp, hs3)
+        hs_new3 = self.detect3.hs
+
+        return out1, out2, out3, hs_new1, hs_new2, hs_new3
+
+
+class YoloNetV3LSTM_V1(nn.Module):
+
+    def __init__(self, nms=False, post=True):
+        super(YoloNetV3LSTM_V1, self).__init__()
+        self.darknet = DarkNet53BackBone()
+        self.yolo_tail = YoloNetTailLSTM_V1()
+        self.nms = nms
+        self._post_process = post
+
+    def forward(self, x, hs1=None, hs2=None, hs3=None):
+        tmp1, tmp2, tmp3 = self.darknet(x)
+        out1, out2, out3, hs_new1, hs_new2, hs_new3 = self.yolo_tail(tmp1, tmp2, tmp3, hs1, hs2, hs3)
+        out = torch.cat((out1, out2, out3), 1)
+        logging.debug("The dimension of the output before nms is {}".format(out.size()))
+        return out, hs_new1, hs_new2, hs_new3
+
+    def yolo_last_layers(self):
+        _layers = [self.yolo_tail.detect1.conv7,
+                   self.yolo_tail.detect2.conv7,
+                   self.yolo_tail.detect3.conv7]
+        return _layers
+
+    def yolo_last_two_layers(self):
+        _layers = self.yolo_last_layers() + \
+                  [self.yolo_tail.detect1.conv6,
+                   self.yolo_tail.detect2.conv6,
+                   self.yolo_tail.detect3.conv6]
+        return _layers
+
+    def yolo_last_three_layers(self):
+        _layers = self.yolo_last_two_layers() + \
+                  [self.yolo_tail.detect1.lstm5,
+                   self.yolo_tail.detect2.lstm5,
+                   self.yolo_tail.detect3.lstm5]
+        return _layers
+
+    def yolo_tail_layers(self):
+        _layers = [self.yolo_tail]
+
+    def yolo_last_n_layers(self, n):
+        try:
+            n = int(n)
+        except ValueError:
+            pass
+        if n == 1:
+            return self.yolo_last_layers()
+        elif n == 2:
+            return self.yolo_last_two_layers()
+        elif n == 3:
+            return self.yolo_last_three_layers()
+        elif n == 'tail':
+            return self.yolo_tail_layers()
+        else:
+            raise ValueError("n>3 not defined")
+
+
+
+class DetectionBlockLSTM_V2(nn.Module):
+    """The DetectionBlock contains:
+    Six ConvLayers, 1 Conv2D Layer and 1 YoloLayer.
+    The first 6 ConvLayers are formed the following way:
+    1x1xn, 3x3x2n, 1x1xn, 3x3x2n, 1x1xn, 3x3x2n,
+    The Conv2D layer is 1x1x255.
+    Some block will have branch after the fifth ConvLayer.
+    The input channel is arbitrary (in_channels)
+    out_channels = n
+    """
+
+    def __init__(self, in_channels, out_channels, scale, stride):
+        super(DetectionBlockLSTM_V2, self).__init__()
+        assert out_channels % 2 == 0  #assert out_channels is an even number
+        half_out_channels = out_channels // 2
+        self.conv1 = ConvLayer(in_channels, half_out_channels, 1)
+        self.conv2 = ConvLayer(half_out_channels, out_channels, 3)
+        self.conv3 = ConvLayer(out_channels, half_out_channels, 1)
+        self.conv4 = ConvLayer(half_out_channels, out_channels, 3)
+        self.conv5 = ConvLayer(out_channels, half_out_channels, 1)
+        self.lstm = BottleNeckLSTMCell(half_out_channels, half_out_channels)
+        self.conv6 = ConvLayer(half_out_channels, out_channels, 3)
+        self.conv7 = nn.Conv2d(out_channels, LAST_LAYER_DIM, 1, bias=True)
+        self.yolo = YoloLayer(scale, stride)
+
+    def forward(self, x, hs=None):
+        tmp = self.conv1(x)
+        tmp = self.conv2(tmp)
+        tmp = self.conv3(tmp)
+        tmp = self.conv4(tmp)
+        self.branch = self.conv5(tmp)
+        self.hs = self.lstm(self.branch, hs)
+        tmp = self.conv6(self.hs[0])
+        tmp = self.conv7(tmp)
+        out = self.yolo(tmp)
+
+        return out
+
+
+class YoloNetTailLSTM_V2(nn.Module):
+
+    """The tail side of the YoloNet.
+    It will take the result from DarkNet53BackBone and do some upsampling and concatenation.
+    It will finally output the detection result.
+    Assembling YoloNetTail and DarkNet53BackBone will give you final result"""
+
+    def __init__(self):
+        super(YoloNetTailLSTM_V2, self).__init__()
+        self.detect1 = DetectionBlockLSTM_V2(1024, 1024, 'l', 32)
+        self.conv1 = ConvLayer(512, 256, 1)
+        self.detect2 = DetectionBlockLSTM_V2(768, 512, 'm', 16)
+        self.conv2 = ConvLayer(256, 128, 1)
+        self.detect3 = DetectionBlockLSTM_V2(384, 256, 's', 8)
+
+    def forward(self, x1, x2, x3, hs1=None, hs2=None, hs3=None):
+        out1 = self.detect1(x1, hs1)
+        branch1 = self.detect1.branch
+        hs_new1 = self.detect1.hs
+        tmp = self.conv1(branch1)
+        tmp = F.interpolate(tmp, scale_factor=2)
+        tmp = torch.cat((tmp, x2), 1)
+        out2 = self.detect2(tmp, hs2)
+        branch2 = self.detect2.branch
+        hs_new2 = self.detect2.hs
+        tmp = self.conv2(branch2)
+        tmp = F.interpolate(tmp, scale_factor=2)
+        tmp = torch.cat((tmp, x3), 1)
+        out3 = self.detect3(tmp, hs3)
+        hs_new3 = self.detect3.hs
+
+        return out1, out2, out3, hs_new1, hs_new2, hs_new3
+
+
+class YoloNetV3LSTM_V2(nn.Module):
+
+    def __init__(self, nms=False, post=True):
+        super(YoloNetV3LSTM_V2, self).__init__()
+        self.darknet = DarkNet53BackBone()
+        self.yolo_tail = YoloNetTailLSTM_V2()
+        self.nms = nms
+        self._post_process = post
+
+    def forward(self, x, hs1=None, hs2=None, hs3=None):
+        tmp1, tmp2, tmp3 = self.darknet(x)
+        out1, out2, out3, hs_new1, hs_new2, hs_new3 = self.yolo_tail(tmp1, tmp2, tmp3, hs1, hs2, hs3)
+        out = torch.cat((out1, out2, out3), 1)
+        logging.debug("The dimension of the output before nms is {}".format(out.size()))
+        return out, hs_new1, hs_new2, hs_new3
+
+    def yolo_last_layers(self):
+        _layers = [self.yolo_tail.detect1.conv7,
+                   self.yolo_tail.detect2.conv7,
+                   self.yolo_tail.detect3.conv7]
+        return _layers
+
+    def yolo_last_two_layers(self):
+        _layers = self.yolo_last_layers() + \
+                  [self.yolo_tail.detect1.conv6,
+                   self.yolo_tail.detect2.conv6,
+                   self.yolo_tail.detect3.conv6]
+        return _layers
+
+    def yolo_last_three_layers(self):
+        _layers = self.yolo_last_two_layers() + \
+                  [self.yolo_tail.detect1.lstm,
+                   self.yolo_tail.detect2.lstm,
+                   self.yolo_tail.detect3.lstm]
+        return _layers
+
+    def yolo_tail_layers(self):
+        _layers = [self.yolo_tail]
 
     def yolo_last_n_layers(self, n):
         try:

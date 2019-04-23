@@ -53,7 +53,7 @@ LAST_LAYER_DIM = NUM_ANCHORS_PER_SCALE * NUM_ATTRIB
 IGNORE_THRESH = 0.5
 # NOOBJ_COEFF and COORD_COEFF are the hyperparameters for the loss function, as described in YOLOv1 paper.
 # Here we used the follow two values, which give comparable results with the original YOLOv3 implementation.
-NOOBJ_COEFF = 0.5
+NOOBJ_COEFF = 0.2
 COORD_COEFF = 5
 
 

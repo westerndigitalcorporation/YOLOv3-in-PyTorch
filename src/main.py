@@ -160,56 +160,12 @@ def load_yolov3_model(weight_path, device, ckpt=False, mode='eval'):
     return _model
 
 
-# def load_image_folder_dataset(img_folder_dir, img_size, batch_size, n_cpu):
-#     _dataloader = DataLoader(
-#         ImageFolder(
-#             img_folder_dir,
-#             img_size=img_size
-#         ),
-#         batch_size=batch_size,
-#         shuffle=False,
-#         num_workers=n_cpu
-#     )
-#     return _dataloader
-
-
-# def load_coco_dataset(img_folder_dir, annot_path, img_size, batch_size, n_cpu, shuffle):
-#     _dataloader = DataLoader(
-#         CocoDetectionBoundingBox(
-#             img_folder_dir,
-#             annot_path,
-#             img_size=img_size
-#         ),
-#         batch_size=batch_size,
-#         shuffle=shuffle,
-#         num_workers=n_cpu,
-#         collate_fn=collate_img_label_fn
-#     )
-#     return _dataloader
-
-
-# def load_caltech_dataset(root, img_size, batch_size, n_cpu, shuffle):
-#     _dataloader = DataLoader(
-#         CaltechPedDataset(
-#             root,
-#             img_size=img_size,
-#             transform='random',
-#             video_set='training'
-#         ),
-#         batch_size=batch_size,
-#         shuffle=shuffle,
-#         num_workers=n_cpu,
-#         collate_fn=collate_img_label_fn
-#     )
-#     return _dataloader
-
-
 def load_dataset(type, img_dir, annot_dir, img_size, batch_size, n_cpu, shuffle, **kwargs):
     if type == "image_folder":
         _dataset = ImageFolder(img_dir, img_size=img_size)
         _collate_fn = None
     elif type == "coco":
-        _dataset = CocoDetectionBoundingBox(img_dir, annot_dir, img_size=img_size)
+        _dataset = CocoDetectionBoundingBox(img_dir, annot_dir, img_size=img_size, transform='random')
         _collate_fn = collate_img_label_fn
     elif type == "caltech":
         _dataset = CaltechPedDataset(img_dir, img_size, **kwargs)
@@ -234,8 +190,6 @@ def make_output_dir(out_dir):
 def run_detection(model, dataloader, device, conf_thres, nms_thres):
     results = []
     _total_time = 0
-    _total_time_nn = 0
-    _total_time_pp = 0
 
     logging.info('Performing object detection:')
 
@@ -249,7 +203,6 @@ def run_detection(model, dataloader, device, conf_thres, nms_thres):
         start_time = time.time()
         with torch.no_grad():
             detections = model(img_batch)
-        forward_end_time = time.time()
         detections = post_process(detections, True, conf_thres, nms_thres)
 
         for detection, scale, padding in zip(detections, scales, paddings):
@@ -259,27 +212,16 @@ def run_detection(model, dataloader, device, conf_thres, nms_thres):
         # Log progress
         end_time = time.time()
         inference_time_both = end_time - start_time
-        inference_time_nn = forward_end_time - start_time
-        inference_time_pp = end_time - forward_end_time
+        # print("Total PP time: {:.1f}".format(inference_time_pp*1000))
         logging.info('Batch {}, '
-                     'NN inference time: {}s, '
-                     'PostProc inference time: {}s.'
                      'Total time: {}s, '.format(batch_i,
-                                                inference_time_nn,
-                                                inference_time_pp,
                                                 inference_time_both))
         _total_time += inference_time_both
-        _total_time_nn += inference_time_nn
-        _total_time_pp += inference_time_pp
 
         results.extend(zip(file_names, detections, scales, paddings))
 
     avg_time_both = _total_time / len(dataloader.dataset)
-    avg_time_nn = _total_time_nn / len(dataloader.dataset)
-    avg_time_pp = _total_time_pp / len(dataloader.dataset)
     logging.info('Average inference time (total) is {}s.'.format(avg_time_both))
-    logging.info('Average inference time (NN) is {}s.'.format(avg_time_nn))
-    logging.info('Average inference time (PostProc) is {}s.'.format(avg_time_pp))
     return results
 
 
@@ -302,13 +244,26 @@ def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_
                     continue
                 optimizer.step()
 
+            # logging.info(
+            #     "[Epoch {}/{}, Batch {}/{}] [Losses: total {}, coord {}, obj {}, noobj {}, class {}]"
+            #     .format(
+            #         epoch_i,
+            #         n_epoch,
+            #         batch_i,
+            #         len(dataloader),
+            #         losses[0].item(),
+            #         losses[1].item(),
+            #         losses[2].item(),
+            #         losses[3].item(),
+            #         losses[4].item()
+            #     )
+            # )
+
             logging.info(
-                "[Epoch {}/{}, Batch {}/{}] [Losses: total {}, coord {}, obj {}, noobj {}, class {}]"
+                "{}, {}, {}, {}, {}, {}, {}"
                 .format(
                     epoch_i,
-                    n_epoch,
                     batch_i,
-                    len(dataloader),
                     losses[0].item(),
                     losses[1].item(),
                     losses[2].item(),
@@ -433,10 +388,13 @@ def run_yolo_inference(opt):
     # post processing
     if opt.save_det:
         json_path = '{}/{}/detections.json'.format(opt.out_dir, current_datetime_str)
+        make_output_dir(os.path.split(json_path)[0])
         save_results_as_json(results, json_path)
     if opt.save_img:
         class_names = load_classes(opt.class_path)
-        save_results_as_images(results, '{}/{}/img'.format(opt.out_dir, current_datetime_str), class_names)
+        img_path = '{}/{}/img'.format(opt.out_dir, current_datetime_str)
+        make_output_dir(img_path)
+        save_results_as_images(results, img_path, class_names)
     return
 
 
@@ -465,14 +423,6 @@ def run_yolo_training(opt):
             layer.apply(init_layer_randomly)
         for p in layer.parameters():
             p.requires_grad_()
-
-    # dataloader = load_caltech_dataset(
-    #     opt.img_dir,
-    #     opt.img_size,
-    #     opt.batch_size,
-    #     opt.n_cpu,
-    #     shuffle=True
-    # )
 
     dataloader = load_dataset(type=opt.dataset_type,
                               img_dir=opt.img_dir,

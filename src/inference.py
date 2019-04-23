@@ -75,32 +75,37 @@ def non_max_suppression(bboxes, scores, classes, num_classes, conf_thres=0.8, nm
         return bboxes, scores, classes
 
     # threshold out low confidence detection
+
     if conf_thres > 0:
-        conf_mask = (scores >= conf_thres)
-        bboxes = bboxes[conf_mask, :]
-        scores = scores[conf_mask]
-        classes = classes[conf_mask]
+
+        conf_index = torch.nonzero(torch.ge(scores, conf_thres)).squeeze()
+
+        bboxes = bboxes.index_select(0, conf_index)
+        scores = scores.index_select(0, conf_index)
+        classes = classes.index_select(0, conf_index)
 
     # if there are multiple classes, divide them into groups
     grouped_indices = group_same_class_object(classes, one_hot=False, num_classes=num_classes)
     selected_indices_final = []
+
     for class_id, member_idx in enumerate(grouped_indices):
         member_idx_tensor = bboxes.new_tensor(member_idx, dtype=torch.long)
         bboxes_one_class = bboxes.index_select(dim=0, index=member_idx_tensor)
         scores_one_class = scores.index_select(dim=0, index=member_idx_tensor)
-        sorted_indices = argsort(scores_one_class, reverse=True)
+        scores_one_class, sorted_indices = torch.sort(scores_one_class, descending=False)
+
         selected_indices = []
-        for idx in sorted_indices:
-            bbox = bboxes_one_class[idx]
-            selected = True
-            for master_idx in selected_indices:
-                bbox_master = bboxes_one_class[master_idx]
-                if iou(bbox, bbox_master, center=center) >= nms_thres:
-                    selected = False
-                    break
-            if selected:
-                selected_indices.append(idx)
+
+        while sorted_indices.size(0) != 0:
+            picked_index = sorted_indices[-1]
+            selected_indices.append(picked_index)
+            picked_bbox = bboxes_one_class[picked_index]
+            ious = iou_one_to_many(picked_bbox, bboxes_one_class[sorted_indices[:-1]], center=center)
+            under_indices = torch.nonzero(ious <= nms_thres).squeeze()
+            sorted_indices = sorted_indices.index_select(dim=0, index=under_indices)
+
         selected_indices_final.extend([member_idx[i] for i in selected_indices])
+
     selected_indices_final = bboxes.new_tensor(selected_indices_final, dtype=torch.long)
     bboxes_result = bboxes.index_select(dim=0, index=selected_indices_final)
     scores_result = scores.index_select(dim=0, index=selected_indices_final)
@@ -143,6 +148,33 @@ def iou(bbox1, bbox2, center=False):
     Else, they should all be in cxcywh format"""
     x1, y1, w1, h1 = bbox1
     x2, y2, w2, h2 = bbox2
+    if center:
+        x1 = x1 - w1 / 2
+        y1 = y1 - h1 / 2
+        x2 = x2 - w2 / 2
+        y2 = y2 - h2 / 2
+    area1 = w1 * h1
+    area2 = w2 * h2
+    right1 = x1 + w1
+    right2 = x2 + w2
+    bottom1 = y1 + h1
+    bottom2 = y2 + h2
+    w_intersect = (torch.min(right1, right2) - torch.max(x1, x2)).clamp(min=0)
+    h_intersect = (torch.min(bottom1, bottom2) - torch.max(y1, y2)).clamp(min=0)
+    area_intersect = w_intersect * h_intersect
+    iou_ = area_intersect / (area1 + area2 - area_intersect + EPSILON) #add epsilon to avoid NaN
+    return iou_
+
+
+def iou_one_to_many(bbox1, bboxes2, center=False):
+    """Calculate IOU for one bbox with another group of bboxes.
+    If center is false, then they should all in xywh format.
+    Else, they should all be in cxcywh format"""
+    x1, y1, w1, h1 = bbox1
+    x2 = bboxes2[..., 0]
+    y2 = bboxes2[..., 1]
+    w2 = bboxes2[..., 2]
+    h2 = bboxes2[..., 3]
     if center:
         x1 = x1 - w1 / 2
         y1 = y1 - h1 / 2
