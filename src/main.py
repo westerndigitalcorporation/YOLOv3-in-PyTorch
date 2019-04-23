@@ -31,19 +31,15 @@ import logging
 import os
 import time
 
-import numpy as np
 import torch
 from PIL import Image
-from matplotlib import patches
-from matplotlib import pyplot as plt
-from matplotlib.ticker import NullLocator
 from torch.utils.data import DataLoader
 
 from datasets import ImageFolder, CocoDetectionBoundingBox, collate_img_label_fn, CaltechPedDataset
 from inference import post_process
 from model import YoloNetV3
 from training import yolo_loss_fn
-from utils import load_classes, untransform_bboxes, add_coco_empty_category, cxcywh_to_xywh, init_layer_randomly
+from utils import load_classes, untransform_bboxes, add_coco_empty_category, cxcywh_to_xywh, init_layer_randomly, draw_result
 
 
 def parse_args():
@@ -305,33 +301,42 @@ def save_results_as_json(results, json_path):
     return
 
 
+# def save_det_image(img_path, detections, output_img_path, class_names):
+#     img = np.array(Image.open(img_path))
+#     plt.figure()
+#     fig, ax = plt.subplots(1)
+#     ax.imshow(img)
+#     # Draw bounding boxes and labels of detections
+#     if detections is not None:
+#         for detection in detections:
+#             x, y, w, h, score, category_id = detection.tolist()
+#             # add box
+#             box = patches.Rectangle((x, y), w, h,
+#                                     linewidth=2,
+#                                     edgecolor='white',
+#                                     facecolor='none')
+#             ax.add_patch(box)
+#             # Add label
+#             plt.text(x, y,
+#                      s=class_names[int(category_id)],
+#                      color='black',
+#                      verticalalignment='top',
+#                      bbox={'color': 'white', 'pad': 0})
+#     # Save generated image with detections
+#     plt.axis('off')
+#     plt.gca().xaxis.set_major_locator(NullLocator())
+#     plt.gca().yaxis.set_major_locator(NullLocator())
+#     plt.savefig(output_img_path, bbox_inches='tight', pad_inches=0.0)
+#     plt.close()
+#     return
+
+
 def save_det_image(img_path, detections, output_img_path, class_names):
-    img = np.array(Image.open(img_path))
-    plt.figure()
-    fig, ax = plt.subplots(1)
-    ax.imshow(img)
+    img = Image.open(img_path)
     # Draw bounding boxes and labels of detections
     if detections is not None:
-        for detection in detections:
-            x, y, w, h, score, category_id = detection.tolist()
-            # add box
-            box = patches.Rectangle((x, y), w, h,
-                                    linewidth=2,
-                                    edgecolor='white',
-                                    facecolor='none')
-            ax.add_patch(box)
-            # Add label
-            plt.text(x, y,
-                     s=class_names[int(category_id)],
-                     color='black',
-                     verticalalignment='top',
-                     bbox={'color': 'white', 'pad': 0})
-    # Save generated image with detections
-    plt.axis('off')
-    plt.gca().xaxis.set_major_locator(NullLocator())
-    plt.gca().yaxis.set_major_locator(NullLocator())
-    plt.savefig(output_img_path, bbox_inches='tight', pad_inches=0.0)
-    plt.close()
+        img = draw_result(img, detections, class_names=class_names)
+    img.save(output_img_path)
     return
 
 

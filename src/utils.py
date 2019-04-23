@@ -30,7 +30,7 @@ import torch.nn as nn
 
 from config import MISSING_IDS, NUM_CLASSES_COCO
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from torchvision.transforms import ToPILImage
 
 
@@ -148,17 +148,29 @@ def xywh_to_cxcywh(bbox):
     return bbox
 
 
-def draw_result(img, boxes):
+def draw_result(img, boxes, show=False, class_names = None):
     if isinstance(img, torch.Tensor):
         transform = ToPILImage()
         img = transform(img)
     draw = ImageDraw.ImageDraw(img)
+    show_class = (boxes.size(1) >= 6)
+    if show_class:
+        assert isinstance(class_names, list)
     for box in boxes:
         x, y, w, h = box[:4]
         x2 = x + w
         y2 = y + h
         draw.rectangle([x, y, x2, y2], outline='white', width=3)
-    img.show()
+        if show_class:
+            class_id = int(box[5])
+            class_name = class_names[class_id]
+            font_size = 20
+            class_font = ImageFont.truetype("../fonts/arial.ttf", font_size)
+            text_size = draw.textsize(class_name, font=class_font)
+            draw.rectangle([x, y-text_size[1], x + text_size[0], y], fill='white')
+            draw.text([x, y-font_size], class_name, font=class_font, fill='black')
+    if show:
+        img.show()
     return img
 
 
