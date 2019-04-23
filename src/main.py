@@ -61,6 +61,9 @@ def parse_args():
     # training only
     parser.add_argument('--annot-path', dest='annot_path', type=str, default=None,
                         help="TRAINING ONLY: The path to the file of the annotations for training.")
+    parser.add_argument('--no-augment', dest='data_augment', action='store_false',
+                        help="TRAINING ONLY: use this option to turn off the data augmentation of the dataset."
+                             "Currently only COCO dataset support data augmentation.")
 
     # model loading:
     # both:
@@ -156,12 +159,13 @@ def load_yolov3_model(weight_path, device, ckpt=False, mode='eval'):
     return _model
 
 
-def load_dataset(type, img_dir, annot_dir, img_size, batch_size, n_cpu, shuffle, **kwargs):
+def load_dataset(type, img_dir, annot_dir, img_size, batch_size, n_cpu, shuffle, augment, **kwargs):
     if type == "image_folder":
         _dataset = ImageFolder(img_dir, img_size=img_size)
         _collate_fn = None
     elif type == "coco":
-        _dataset = CocoDetectionBoundingBox(img_dir, annot_dir, img_size=img_size, transform='random')
+        _transform = 'random' if augment else 'default'
+        _dataset = CocoDetectionBoundingBox(img_dir, annot_dir, img_size=img_size, transform=_transform)
         _collate_fn = collate_img_label_fn
     elif type == "caltech":
         _dataset = CaltechPedDataset(img_dir, img_size, **kwargs)
@@ -240,26 +244,13 @@ def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_
                     continue
                 optimizer.step()
 
-            # logging.info(
-            #     "[Epoch {}/{}, Batch {}/{}] [Losses: total {}, coord {}, obj {}, noobj {}, class {}]"
-            #     .format(
-            #         epoch_i,
-            #         n_epoch,
-            #         batch_i,
-            #         len(dataloader),
-            #         losses[0].item(),
-            #         losses[1].item(),
-            #         losses[2].item(),
-            #         losses[3].item(),
-            #         losses[4].item()
-            #     )
-            # )
-
             logging.info(
-                "{}, {}, {}, {}, {}, {}, {}"
+                "[Epoch {}/{}, Batch {}/{}] [Losses: total {}, coord {}, obj {}, noobj {}, class {}]"
                 .format(
                     epoch_i,
+                    n_epoch,
                     batch_i,
+                    len(dataloader),
                     losses[0].item(),
                     losses[1].item(),
                     losses[2].item(),
@@ -267,6 +258,19 @@ def run_training(model, optimizer, dataloader, device, img_size, n_epoch, every_
                     losses[4].item()
                 )
             )
+
+            # logging.info(
+            #     "{}, {}, {}, {}, {}, {}, {}"
+            #     .format(
+            #         epoch_i,
+            #         batch_i,
+            #         losses[0].item(),
+            #         losses[1].item(),
+            #         losses[2].item(),
+            #         losses[3].item(),
+            #         losses[4].item()
+            #     )
+            # )
 
             if every_n_batch != 0 and (batch_i + 1) % every_n_batch == 0:
                 save_path = "{}/ckpt_epoch_{}_batch_{}.pt".format(ckpt_dir, epoch_i, batch_i)
@@ -299,36 +303,6 @@ def save_results_as_json(results, json_path):
     with open(json_path, 'w') as f:
         json.dump(results_json, f)
     return
-
-
-# def save_det_image(img_path, detections, output_img_path, class_names):
-#     img = np.array(Image.open(img_path))
-#     plt.figure()
-#     fig, ax = plt.subplots(1)
-#     ax.imshow(img)
-#     # Draw bounding boxes and labels of detections
-#     if detections is not None:
-#         for detection in detections:
-#             x, y, w, h, score, category_id = detection.tolist()
-#             # add box
-#             box = patches.Rectangle((x, y), w, h,
-#                                     linewidth=2,
-#                                     edgecolor='white',
-#                                     facecolor='none')
-#             ax.add_patch(box)
-#             # Add label
-#             plt.text(x, y,
-#                      s=class_names[int(category_id)],
-#                      color='black',
-#                      verticalalignment='top',
-#                      bbox={'color': 'white', 'pad': 0})
-#     # Save generated image with detections
-#     plt.axis('off')
-#     plt.gca().xaxis.set_major_locator(NullLocator())
-#     plt.gca().yaxis.set_major_locator(NullLocator())
-#     plt.savefig(output_img_path, bbox_inches='tight', pad_inches=0.0)
-#     plt.close()
-#     return
 
 
 def save_det_image(img_path, detections, output_img_path, class_names):
@@ -387,7 +361,8 @@ def run_yolo_inference(opt):
                               img_size=opt.img_size,
                               batch_size=opt.batch_size,
                               n_cpu=opt.n_cpu,
-                              shuffle=False)
+                              shuffle=False,
+                              augment=False)
     # run detection
     results = run_detection(model, dataloader, dev, opt.conf_thres, opt.nms_thres)
     # post processing
@@ -435,7 +410,8 @@ def run_yolo_training(opt):
                               img_size=opt.img_size,
                               batch_size=opt.batch_size,
                               n_cpu=opt.n_cpu,
-                              shuffle=True)
+                              shuffle=True,
+                              augment=opt.data_augment)
 
     optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
