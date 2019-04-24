@@ -24,7 +24,7 @@ The repo implements YOLOv3 using the PyTorch framework. Both inference and train
 
 ## Introduction
 
-You-Only-Look-Once (YOLO) newtorks was introduced by Joseph Redmon et al. 
+You-Only-Look-Once (YOLO) newtork was introduced by Joseph Redmon et al. 
 Three versions were implemented in C, with the framework called [darknet](https://github.com/pjreddie/darknet) (paper: [v1](https://arxiv.org/abs/1506.02640), [v2](https://arxiv.org/abs/1612.08242), [v3](https://arxiv.org/abs/1804.02767)).
 
 This repo implements the Nueral Network (NN) model of YOLOv3 in the PyTorch framework, aiming to ease the pain when the network needs to be modified or retrained.
