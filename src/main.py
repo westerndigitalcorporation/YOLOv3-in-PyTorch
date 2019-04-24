@@ -35,7 +35,10 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 
-from datasets import ImageFolder, CocoDetectionBoundingBox, collate_img_label_fn, CaltechPedDataset
+from datasets.utils import collate_img_label_fn
+from datasets.image import ImageFolder
+from datasets.caltech import CaltechPedDataset
+from datasets.coco import CocoDetectionBoundingBox
 from inference import post_process
 from model import YoloNetV3
 from training import yolo_loss_fn

@@ -24,13 +24,12 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 # USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import numpy as np
 import torch
 import torch.nn as nn
 
-from config import MISSING_IDS, NUM_CLASSES_COCO
+from config import MISSING_IDS
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
 from torchvision.transforms import ToPILImage
 
 
@@ -90,38 +89,6 @@ def transform_bboxes(bb, scale, padding):
     h *= scale
 
     return x, y, w, h
-
-
-def coco_category_to_one_hot(category_id, dtype="uint"):
-    """ convert from a category_id to one-hot vector, considering there are missing IDs in coco dataset."""
-    new_id = delete_coco_empty_category(category_id)
-    return category_to_one_hot(new_id, NUM_CLASSES_COCO, dtype)
-
-
-def category_to_one_hot(category_id, num_classes, dtype="uint"):
-    """ convert from a category_id to one-hot vector """
-    return torch.from_numpy(np.eye(num_classes, dtype=dtype)[category_id])
-
-
-def delete_coco_empty_category(old_id):
-    """The COCO dataset has 91 categories but 11 of them are empty.
-    This function will convert the 80 existing classes into range [0-79].
-    Note the COCO original class index starts from 1.
-    The converted index starts from 0.
-    Args:
-        old_id (int): The category ID from COCO dataset.
-    Return:
-        new_id (int): The new ID after empty categories are removed. """
-    starting_idx = 1
-    new_id = old_id - starting_idx
-    for missing_id in MISSING_IDS:
-        if old_id > missing_id:
-            new_id -= 1
-        elif old_id == missing_id:
-            raise KeyError("illegal category ID in coco dataset! ID # is {}".format(old_id))
-        else:
-            break
-    return new_id
 
 
 def add_coco_empty_category(old_id):

@@ -36,10 +36,10 @@ from torchvision.transforms import functional as TF
 from config import EPSILON
 
 
-def default_transform_fn_old(padding, img_size):
-    return tv_tf.Compose([tv_tf.Pad(padding, fill=(127, 127, 127)),
-                          tv_tf.Resize(img_size),
-                          tv_tf.ToTensor()])
+# def default_transform_fn_old(padding, img_size):
+#     return tv_tf.Compose([tv_tf.Pad(padding, fill=(127, 127, 127)),
+#                           tv_tf.Resize(img_size),
+#                           tv_tf.ToTensor()])
 
 
 def default_transform_fn(img_size):
@@ -55,23 +55,6 @@ def random_transform_fn(img_size):
                              RandomAdjustImage(),
                              ClampLabel(),
                              tv_tf.ToTensor()])
-
-
-# def get_padding(h, w):
-#     """Generate the size of the padding given the size of the image,
-#     such that the padded image will be square.
-#     Args:
-#         h (int): the height of the image.
-#         w (int): the width of the image.
-#     Return:
-#         A tuple of size 4 indicating the size of the padding in 4 directions:
-#         left, top, right, bottom. This is to match torchvision.transforms.Pad's parameters.
-#         For details, see:
-#             https://pytorch.org/docs/stable/torchvision/transforms.html#torchvision.transforms.Pad
-#         """
-#     dim_diff = np.abs(h - w)
-#     pad1, pad2 = dim_diff // 2, dim_diff - dim_diff // 2
-#     return (0, pad1, 0, pad2) if h <= w else (pad1, 0, pad2, 0)
 
 
 class RandomResizedCropWithLabel(tv_tf.RandomResizedCrop):
@@ -265,7 +248,7 @@ class PadToSquareWithLabel(object):
         padding = self._get_padding(w, h)
         img = TF.pad(img, padding, self.fill, self.padding_mode)
         if label is None:
-            return img
+            return img, label
         label[..., 0] += padding[0]
         label[..., 1] += padding[1]
         return img, label
@@ -281,7 +264,7 @@ class ResizeWithLabel(tv_tf.Resize):
         img = super(ResizeWithLabel, self).__call__(img)
         w_new, h_new = img.size
         if label is None:
-            return img
+            return img, label
         scale_w = w_new / w_old
         scale_h = h_new / h_old
         label[..., 0] *= scale_w
